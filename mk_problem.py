@@ -31,55 +31,98 @@ def ilit_to_vlit(x, n_vars):
     else: return var
 
 class Problem(object):
-    def __init__(self, n_vars, iclauses, is_sat, n_cells_per_batch, all_dimacs):
-        self.n_vars = n_vars
-        self.n_lits = 2 * n_vars
+    def __init__(self, specs, sizes, n_vars_AL, iclauses, is_sat, n_A_cells_per_batch, n_L_cells_per_batch, all_dimacs):
+        self.specs = specs
+        self.sizes = sizes
+        self.n_vars_AL = n_vars_AL
+        self.n_lits_AL = map(lambda x: x * 2, n_vars_AL)
         self.n_clauses = len(iclauses)
 
-        self.n_cells = sum(n_cells_per_batch)
-        self.n_cells_per_batch = n_cells_per_batch
+        self.n_cells_A = sum(n_A_cells_per_batch)
+        self.n_cells_L = sum(n_L_cells_per_batch)
+        self.n_A_cells_per_batch = n_A_cells_per_batch
+        self.n_L_cells_per_batch = n_L_cells_per_batch
 
         self.is_sat = is_sat
-        self.compute_L_unpack(iclauses)
+        self.compute_AL_unpack(iclauses)
 
         # will be a list of None for training problems
         self.dimacs = all_dimacs
 
-    def compute_L_unpack(self, iclauses):
-        self.L_unpack_indices = np.zeros([self.n_cells, 2], dtype=np.int)
-        cell = 0
+    def compute_AL_unpack(self, iclauses):
+        self.A_unpack_indices = np.zeros([self.n_cells_A, 2], dtype=np.int)
+        self.L_unpack_indices = np.zeros([self.n_cells_L, 2], dtype=np.int)
+        cell_A = 0
+        cell_L = 0
         for clause_idx, iclause in enumerate(iclauses):
-            vlits = [ilit_to_vlit(x, self.n_vars) for x in iclause]
-            for vlit in vlits:
-                self.L_unpack_indices[cell, :] = [vlit, clause_idx]
-                cell += 1
+            assert(len(iclause) == sum(self.specs))
+            for i in range(self.specs[0]):
+                vlit = ilit_to_vlit(iclause[i], self.n_vars_AL[0])
+                self.A_unpack_indices[cell_A, :] = [vlit, clause_idx]
+                cell_A += 1
+            for i in range(self.specs[0], sum(self.specs)):
+                vlit = ilit_to_vlit(iclause[i], self.n_vars_AL[1])
+                self.L_unpack_indices[cell_L, :] = [vlit, clause_idx]
+                cell_L += 1
+            # vlits = [ilit_to_vlit(x, self.n_vars) for x in iclause]
+            # for vlit in vlits:
+            #     self.L_unpack_indices[cell, :] = [vlit, clause_idx]
+            #     cell += 1
 
-        assert(cell == self.n_cells)
+        assert(cell_A == self.n_cells_A)
+        assert(cell_L == self.n_cells_L)
+
 
 def shift_ilit(x, offset):
     assert(x != 0)
     if x > 0: return x + offset
     else:     return x - offset
 
-def shift_iclauses(iclauses, offset):
-    return [[shift_ilit(x, offset) for x in iclause] for iclause in iclauses]
+def shift_iclauses(iclauses, specs, offsets):
+    # specs is a tuple of 2, i.e. (2, 3), meaning that there are 2 foralls and 3 exists per clause
+    # offsets is a tuple of 2, i.e.(80, 100), meaning that the batch has collected 80 forall vars and 100 exsit vars
+    assert (len(specs) == 2), "only handle 2QBFs"
+    assert (len(offsets) = 2), "only handle 2QBFs"
+    for iclauses in iclauses:
+        assert(len(iclause) == sum(specs)), "num of vars should fits the specs"
+        for i in range(specs[0]):
+            iclause[i] = shift_ilit(iclause[i], offsets[0])
+        for i in range(specs[0], sum(specs)):
+            iclause[i] = shift_ilit(iclause[i], offsets[1])
+    return iclauses
+    # return [[shift_ilit(x, offset) for x in iclause] for iclause in iclauses]
 
-def mk_batch_problem(problems):
+# this function only applies to 2QBF
+def mk_batch_problem_2QBF(problems):
     all_iclauses = []
     all_is_sat = []
-    all_n_cells = []
+    all_n_cells_L = []
+    all_n_cells_A = []
     all_dimacs = []
-    offset = 0
+    offsets = (0, 0)
 
-    prev_n_vars = None
-    for dimacs, n_vars, iclauses, is_sat in problems:
-        assert(prev_n_vars is None or n_vars == prev_n_vars)
-        prev_n_vars = n_vars
+    prev_specs = None
+    prev_sizes = None
+    # specs is about how many of each variables in each quantifier block
+    # for example (2, 3) means each clause has 5 vars, first 2 from forall, last 3 from exists
+    # sizes is about how many of total variables in each quantifier block
+    # for example (8, 10) means the problem has total 8 vars for forall, total 10 vars for exists 
+    for dimacs, specs, sizes, iclauses, is_sat in problems:
+        assert(len(specs) == 2)
+        assert(len(sizes) == 2)
+        assert(prev_specs is None or specs == prev_specs)
+        assert(prev_sizes is None or sizes == prev_sizes)
+        prev_specs = specs
+        prev_sizes = sizes
 
-        all_iclauses.extend(shift_iclauses(iclauses, offset))
+        # concatenate clauses of a batch of problems together requires the vars to be shifted
+        all_iclauses.extend(shift_iclauses(iclauses, specs, offsets))
         all_is_sat.append(is_sat)
-        all_n_cells.append(sum([len(iclause) for iclause in iclauses]))
+        all_n_cells_A.append(len(iclauses) * specs[0])
+        all_n_cells_L.append(len(iclauses) * specs[1])
+        # all_n_cells_L.append(sum([len(iclause) for iclause in iclauses]))
         all_dimacs.append(dimacs)
-        offset += n_vars
+        for i in range(len(sizes)):
+            offsets[i] += sizes[i]
 
-    return Problem(offset, all_iclauses, all_is_sat, all_n_cells, all_dimacs)
+    return Problem(prev_specs, prev_sizes, offsets, all_iclauses, all_is_sat, all_n_cells_A, all_n_cells_L, all_dimacs)

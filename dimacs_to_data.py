@@ -30,10 +30,19 @@ def parse_dimacs(filename):
     i = 0
     while lines[i].strip().split(" ")[0] == "c":
         i += 1
+
+    # the following line should be the "p cnf" line
     header = lines[i].strip().split(" ")
     assert(header[0] == "p")
     n_vars = int(header[2])
-    iclauses = [[int(s) for s in line.strip().split(" ")[:-1]] for line in lines[i+1:]]
+
+    # qdimacs file has 2 more lines (for 2QBF)
+    # a 1 2 3 ... 0 << the forall variables
+    # e 9 10 11 ... 0 << the exist variables
+    i += 1
+    while lines[i].strip().split(" ")[0] == 'a' || lines[i].strip().split(" ")[0] == 'e':
+        i += 1
+    iclauses = [[int(s) for s in line.strip().split(" ")[:-1]] for line in lines[i:]]
     return n_vars, iclauses
 
 def mk_dataset_filename(opts, n_batches):
@@ -41,14 +50,20 @@ def mk_dataset_filename(opts, n_batches):
     dimacs_dir = dimacs_path[-1] if dimacs_path[-1] != "" else dimacs_path[-2]
     return "%s/data_dir=%s_npb=%d_nb=%d.pkl" % (opts.out_dir, dimacs_dir, opts.max_nodes_per_batch, n_batches)
 
+
 parser = argparse.ArgumentParser()
 parser.add_argument('dimacs_dir', action='store', type=str)
 parser.add_argument('out_dir', action='store', type=str)
 parser.add_argument('max_nodes_per_batch', action='store', type=int)
 parser.add_argument('--one', action='store', dest='one', type=int, default=0)
 parser.add_argument('--max_dimacs', action='store', dest='max_dimacs', type=int, default=None)
+parser.add_argument('--n_quantifiers', action='store', dest='n_quantifiers', type=int, help='<Required> provide the number of quantifier', required=True)
+parser.add_argument('-a', action='append', dest='specification', type=int, help='<Required> provide the specs of random QBF', required=True)
 
 opts = parser.parse_args()
+specs = args.specification[:args.n_quantifiers]
+sizes = args.specification[args.n_quantifiers:]    
+
 
 problems = []
 batches = []
@@ -89,8 +104,10 @@ for filename in filenames:
 
     prev_n_vars = n_vars
 
-    is_sat, stats = solve_sat(n_vars, iclauses)
-    problems.append((filename, n_vars, iclauses, is_sat))
+    # is_sat, stats = solve_sat(n_vars, iclauses)
+    assert ('sat' in filename) or ('unsat' in filename)
+    is_sat = ('unsat' not in filename)
+    problems.append((filename, specs, sizes, iclauses, is_sat))
     n_nodes_in_batch += n_nodes
 
 if len(problems) > 0:
