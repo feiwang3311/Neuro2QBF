@@ -16,14 +16,12 @@
 import numpy as np
 import math
 
-# TODO(dhs): duplication
 def ilit_to_var_sign(x):
     assert(abs(x) > 0)
     var = abs(x) - 1
     sign = x < 0
     return var, sign
 
-# TODO(dhs): duplication
 def ilit_to_vlit(x, n_vars):
     assert(x != 0)
     var, sign = ilit_to_var_sign(x)
@@ -35,7 +33,7 @@ class Problem(object):
         self.specs = specs
         self.sizes = sizes
         self.n_vars_AL = n_vars_AL
-        self.n_lits_AL = map(lambda x: x * 2, n_vars_AL)
+        self.n_lits_AL = [n_vars_AL[0] * 2, n_vars_AL[1] * 2]
         self.n_clauses = len(iclauses)
 
         self.n_cells_A = sum(n_A_cells_per_batch)
@@ -72,23 +70,35 @@ class Problem(object):
         assert(cell_A == self.n_cells_A)
         assert(cell_L == self.n_cells_L)
 
+def shift_ilit(x, offsets, idx, sizes):
+    # x is the actual lit in the clause
+    # offsets is the number of collected vars, i.e. (80, 100) means that the batch as collected 80 forall vars and 100 exist vars
+    # idx is the category of x (0 or 1)
+    # sizes is the number of vars for this problem, i.e. (8, 10) means that the current problem has 8 forall vars and 10 exist vars
+    assert (x != 0)
+    offset_in_problem = []
+    for i in range(len(sizes)):
+        offset_in_problem.append(0 if i == 0 else (offset_in_problem[i-1] + sizes[i-1]))
+    if x > 0: return x + (offsets[idx] - offset_in_problem[idx])
+    else:     return x - (offsets[idx] - offset_in_problem[idx])
 
-def shift_ilit(x, offset):
-    assert(x != 0)
-    if x > 0: return x + offset
-    else:     return x - offset
+#def shift_ilit(x, offset):
+#    assert(x != 0)
+#    if x > 0: return x + offset
+#    else:     return x - offset
 
-def shift_iclauses(iclauses, specs, offsets):
+def shift_iclauses(iclauses, specs, sizes, offsets):
     # specs is a tuple of 2, i.e. (2, 3), meaning that there are 2 foralls and 3 exists per clause
-    # offsets is a tuple of 2, i.e.(80, 100), meaning that the batch has collected 80 forall vars and 100 exsit vars
+    # sizes is a tuple of 2, i.e. (8, 10), meaning that this problem has 8 foralls and 10 exists
+    # offsets is a tuple of 2, i.e.(80, 100), meaning that the batch has collected 80 forall vars and 100 exist vars
     assert (len(specs) == 2), "only handle 2QBFs"
-    assert (len(offsets) = 2), "only handle 2QBFs"
-    for iclauses in iclauses:
+    assert (len(offsets) == 2), "only handle 2QBFs"
+    for iclause in iclauses:
         assert(len(iclause) == sum(specs)), "num of vars should fits the specs"
         for i in range(specs[0]):
-            iclause[i] = shift_ilit(iclause[i], offsets[0])
+            iclause[i] = shift_ilit(iclause[i], offsets, 0, sizes)
         for i in range(specs[0], sum(specs)):
-            iclause[i] = shift_ilit(iclause[i], offsets[1])
+            iclause[i] = shift_ilit(iclause[i], offsets, 1, sizes)
     return iclauses
     # return [[shift_ilit(x, offset) for x in iclause] for iclause in iclauses]
 
@@ -99,7 +109,7 @@ def mk_batch_problem_2QBF(problems):
     all_n_cells_L = []
     all_n_cells_A = []
     all_dimacs = []
-    offsets = (0, 0)
+    offsets = [0, 0]
 
     prev_specs = None
     prev_sizes = None
@@ -116,7 +126,7 @@ def mk_batch_problem_2QBF(problems):
         prev_sizes = sizes
 
         # concatenate clauses of a batch of problems together requires the vars to be shifted
-        all_iclauses.extend(shift_iclauses(iclauses, specs, offsets))
+        all_iclauses.extend(shift_iclauses(iclauses, specs, sizes, offsets))
         all_is_sat.append(is_sat)
         all_n_cells_A.append(len(iclauses) * specs[0])
         all_n_cells_L.append(len(iclauses) * specs[1])

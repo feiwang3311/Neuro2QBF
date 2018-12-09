@@ -21,8 +21,7 @@ import random
 import pickle
 import argparse
 import sys
-from solver import solve_sat
-from mk_problem import mk_batch_problem
+from mk_problem import mk_batch_problem_2QBF
 
 def parse_dimacs(filename):
     with open(filename, 'r') as f:
@@ -40,7 +39,7 @@ def parse_dimacs(filename):
     # a 1 2 3 ... 0 << the forall variables
     # e 9 10 11 ... 0 << the exist variables
     i += 1
-    while lines[i].strip().split(" ")[0] == 'a' || lines[i].strip().split(" ")[0] == 'e':
+    while (lines[i].strip().split(" ")[0] == 'a' or lines[i].strip().split(" ")[0] == 'e'):
         i += 1
     iclauses = [[int(s) for s in line.strip().split(" ")[:-1]] for line in lines[i:]]
     return n_vars, iclauses
@@ -48,21 +47,23 @@ def parse_dimacs(filename):
 def mk_dataset_filename(opts, n_batches):
     dimacs_path = opts.dimacs_dir.split("/")
     dimacs_dir = dimacs_path[-1] if dimacs_path[-1] != "" else dimacs_path[-2]
-    return "%s/data_dir=%s_npb=%d_nb=%d.pkl" % (opts.out_dir, dimacs_dir, opts.max_nodes_per_batch, n_batches)
+    fn = "data_dir=%s_npb=%d_nb=%d.pkl" % (dimacs_dir, opts.max_nodes_per_batch, n_batches)
+    return os.path.join(opts.out_dir, fn)
+#    return "%s/data_dir=%s_npb=%d_nb=%d.pkl" % (opts.out_dir, )
 
 
 parser = argparse.ArgumentParser()
-parser.add_argument('dimacs_dir', action='store', type=str)
-parser.add_argument('out_dir', action='store', type=str)
-parser.add_argument('max_nodes_per_batch', action='store', type=int)
+parser.add_argument('--dimacs_dir', action='store', type=str)
+parser.add_argument('--out_dir', action='store', type=str)
+parser.add_argument('--max_nodes_per_batch', action='store', type=int)
 parser.add_argument('--one', action='store', dest='one', type=int, default=0)
 parser.add_argument('--max_dimacs', action='store', dest='max_dimacs', type=int, default=None)
 parser.add_argument('--n_quantifiers', action='store', dest='n_quantifiers', type=int, help='<Required> provide the number of quantifier', required=True)
 parser.add_argument('-a', action='append', dest='specification', type=int, help='<Required> provide the specs of random QBF', required=True)
 
 opts = parser.parse_args()
-specs = args.specification[:args.n_quantifiers]
-sizes = args.specification[args.n_quantifiers:]    
+specs = opts.specification[:opts.n_quantifiers]
+sizes = opts.specification[opts.n_quantifiers:]    
 
 
 problems = []
@@ -80,7 +81,7 @@ filenames = sorted(filenames)
 prev_n_vars = None
 
 for filename in filenames:
-    n_vars, iclauses = parse_dimacs("%s/%s" % (opts.dimacs_dir, filename))
+    n_vars, iclauses = parse_dimacs(os.path.join(opts.dimacs_dir, filename))
     n_clauses = len(iclauses)
     n_cells = sum([len(iclause) for iclause in iclauses])
 
@@ -97,7 +98,7 @@ for filename in filenames:
         batch_ready = True
 
     if batch_ready:
-        batches.append(mk_batch_problem(problems))
+        batches.append(mk_batch_problem_2QBF(problems))
         print("batch %d done (%d vars, %d problems)...\n" % (len(batches), prev_n_vars, len(problems)))
         del problems[:]
         n_nodes_in_batch = 0
@@ -111,7 +112,7 @@ for filename in filenames:
     n_nodes_in_batch += n_nodes
 
 if len(problems) > 0:
-    batches.append(mk_batch_problem(problems))
+    batches.append(mk_batch_problem_2QBF(problems))
     print("batch %d done (%d vars, %d problems)...\n" % (len(batches), n_vars, len(problems)))
     del problems[:]
 
@@ -122,4 +123,4 @@ if not os.path.exists(opts.out_dir):
 dataset_filename = mk_dataset_filename(opts, len(batches))
 print("Writing %d batches to %s...\n" % (len(batches), dataset_filename))
 with open(dataset_filename, 'wb') as f_dump:
-    pickle.dump(batches, f_dump)
+    pickle.dump(batches, f_dump, pickle.HIGHEST_PROTOCOL)

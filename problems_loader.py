@@ -43,4 +43,4 @@ class ProblemsLoader(object):
         self.next_file_num = 0
 
 def init_problems_loader(dirname):
-    return ProblemsLoader([dirname + "/" + f for f in os.listdir(dirname)])
+    return ProblemsLoader([os.path.join(dirname, f) for f in os.listdir(dirname)])

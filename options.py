@@ -37,5 +37,5 @@ def add_neurosat_options(parser):
     parser.add_argument('--n_msg_layers', action='store', dest='n_msg_layers', type=int, default=3, help='Number of layers in message MLPs')
     parser.add_argument('--n_vote_layers', action='store', dest='n_vote_layers', type=int, default=3, help='Number of layers in vote MLPs')
 
-    parser.add_argument('--tf_seed', action='store', dest='tf_seed', type=int, default=0, help='Random seed for tensorflow')
-    parser.add_argument('--np_seed', action='store', dest='np_seed', type=int, default=0, help='Random seed for numpy')
+    parser.add_argument('--tf_seed', action='store', dest='tf_seed', type=int, default=100, help='Random seed for tensorflow')
+    parser.add_argument('--np_seed', action='store', dest='np_seed', type=int, default=400, help='Random seed for numpy')

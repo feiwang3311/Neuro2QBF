@@ -28,7 +28,7 @@ from neurosat import NeuroSAT
 parser = argparse.ArgumentParser()
 add_neurosat_options(parser)
 
-parser.add_argument('train_dir', action='store', type=str, help='Directory with training data')
+parser.add_argument('--train_dir', action='store', type=str, help='Directory with training data')
 parser.add_argument('--run_id', action='store', dest='run_id', type=int, default=None)
 parser.add_argument('--restore_id', action='store', dest='restore_id', type=int, default=None)
 parser.add_argument('--restore_epoch', action='store', dest='restore_epoch', type=int, default=None)

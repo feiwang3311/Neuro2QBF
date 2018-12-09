@@ -13,6 +13,8 @@
 # limitations under the License.
 # ==============================================================================
 
+from __future__ import print_function
+from tensorflow.python import debug as tf_debug
 import tensorflow as tf
 import numpy as np
 import math
@@ -45,63 +47,63 @@ class NeuroSAT(object):
     def declare_parameters(self):
         opts = self.opts
         with tf.variable_scope('params') as scope:
+            self.A_init = tf.get_variable(name="A_init", initializer=tf.random_normal([1, self.opts.d]))
             self.L_init = tf.get_variable(name="L_init", initializer=tf.random_normal([1, self.opts.d]))
             self.C_init = tf.get_variable(name="C_init", initializer=tf.random_normal([1, self.opts.d]))
-            self.A_init = tf.get_variable(name="A_init", initializer=tf.random_normal([1, self.opts.d]))
 
-            self.LC_msg = MLP(opts, opts.d, repeat_end(opts.d, opts.n_msg_layers, opts.d), name=("LC_msg"))
-            self.CL_msg = MLP(opts, opts.d, repeat_end(opts.d, opts.n_msg_layers, opts.d), name=("CL_msg"))
-            self.AC_msg = MLP(opts, opts.d, repeat_end(opts.d, opts.n_msg_layers, opts.d), name=("AC_msg"))
+            self.A_msg = MLP(opts, opts.d, repeat_end(opts.d, opts.n_msg_layers, opts.d), name=("A_msg"))
+            self.L_msg = MLP(opts, opts.d, repeat_end(opts.d, opts.n_msg_layers, opts.d), name=("L_msg"))
+            self.C_msg = MLP(opts, opts.d, repeat_end(opts.d, opts.n_msg_layers, opts.d), name=("C_msg"))
 
+            self.A_update = tf.contrib.rnn.LayerNormBasicLSTMCell(self.opts.d, activation=decode_transfer_fn(opts.lstm_transfer_fn))
             self.L_update = tf.contrib.rnn.LayerNormBasicLSTMCell(self.opts.d, activation=decode_transfer_fn(opts.lstm_transfer_fn))
             self.C_update = tf.contrib.rnn.LayerNormBasicLSTMCell(self.opts.d, activation=decode_transfer_fn(opts.lstm_transfer_fn))
-            self.A_update = tf.contrib.rnn.LayerNormBasicLSTMCell(self.opts.d, activation=decode_transfer_fn(opts.lstm_transfer_fn))
 
+            self.A_vote = MLP(opts, opts.d, repeat_end(opts.d, opts.n_vote_layers, 1), name=("A_vote"))
             self.L_vote = MLP(opts, opts.d, repeat_end(opts.d, opts.n_vote_layers, 1), name=("L_vote"))
             self.vote_bias = tf.get_variable(name="vote_bias", shape=[], initializer=tf.zeros_initializer())
-            self.A_vote = MLP(opts, opts.d, repeat_end(opts.d, opts.n_vote_layers, 1), name=("A_vote"))
-            self.A_vote_bias = tf.get_variable(name="A_vote_bias", shape=[], initializer=tf.zeros_initializer())
 
     def declare_placeholders(self):
-        self.n_vars = tf.placeholder(tf.int32, shape=[], name='n_vars')
         self.n_A_vars = tf.placeholder(tf.int32, shape=[], name='n_A_vars')
-        self.n_lits = tf.placeholder(tf.int32, shape=[], name='n_lits')
         self.n_A_lits = tf.placeholder(tf.int32, shape=[], name='n_A_lits')
+        self.n_L_vars = tf.placeholder(tf.int32, shape=[], name='n_L_vars')
+        self.n_L_lits = tf.placeholder(tf.int32, shape=[], name='n_L_lits')
         self.n_clauses = tf.placeholder(tf.int32, shape=[], name='n_clauses')
 
+        self.A_unpack = tf.sparse_placeholder(tf.float32, shape=[None, None], name='A_unpack')
         self.L_unpack = tf.sparse_placeholder(tf.float32, shape=[None, None], name='L_unpack')
         self.is_sat = tf.placeholder(tf.bool, shape=[None], name='is_sat')
 
         # useful helpers
         self.n_batches = tf.shape(self.is_sat)[0]
-        self.n_vars_per_batch = tf.div(self.n_vars, self.n_batches)
         self.n_A_vars_per_batch = tf.div(self.n_A_vars, self.n_batches)
+        self.n_L_vars_per_batch = tf.div(self.n_L_vars, self.n_batches)
 
-    def while_cond(self, i, L_state, C_state):
+    def while_cond(self, i, L_state, C_state, A_state):
         return tf.less(i, self.opts.n_rounds)
 
-    def flip(self, lits, litsA):
-        return tf.concat([lits[self.n_vars:(2*self.n_vars), :], lits[0:self.n_vars, :]], axis=0)
-            #tf.concat([litsA[self.n_A_vars:(2*self.n_A_vars), :], litsA[0:self.n_A_vars, :]], axis=0))
+    def flip(self, lits, size):
+        return tf.concat([lits[size : (2 * size), :], lits[0 : size, :]], axis=0)
 
     def while_body(self, i, L_state, C_state, A_state):
-        LC_pre_msgs = self.LC_msg.forward(L_state.h)
-        LC_msgs = tf.sparse_tensor_dense_matmul(self.L_unpack, LC_pre_msgs, adjoint_a=True)
+        A_pre_msgs = self.A_msg.forward(A_state.h)
+        AC_msgs = tf.sparse_tensor_dense_matmul(self.A_unpack, A_pre_msgs, adjoint_a=True)
 
-        AL_pre_msgs = self.AC_msg.forward(A_state.h)
-        AC_msgs = tf.sparse_tensor_dense_matmul(self.A_unpack, AC_pre_msgs, adjoint_a=True)
+        L_pre_msgs = self.L_msg.forward(L_state.h)
+        LC_msgs = tf.sparse_tensor_dense_matmul(self.L_unpack, L_pre_msgs, adjoint_a=True)
 
+        # maybe have 2 C_update modules, 1 for LC_msgs and 1 for AC_msgs
         with tf.variable_scope('C_update') as scope:
-            _, C_state = self.C_update(inputs=(LC_msgs + AC_msgs), state=C_state)
+            _, C_state = self.C_update(inputs=(AC_msgs + LC_msgs), state=C_state)
 
-        CL_pre_msgs = self.CL_msg.forward(C_state.h)
-        CL_msgs = tf.sparse_tensor_dense_matmul(self.L_unpack, CL_pre_msgs)
-        CA_msgs = tf.sparse_tensor_dense_matmul(self.A_unpack, CL_pre_msgs)
+        C_pre_msgs = self.C_msg.forward(C_state.h)
+        CL_msgs = tf.sparse_tensor_dense_matmul(self.L_unpack, C_pre_msgs)
+        CA_msgs = tf.sparse_tensor_dense_matmul(self.A_unpack, C_pre_msgs)
 
         with tf.variable_scope('L_update') as scope:
-            _, L_state = self.L_update(inputs=tf.concat([CL_msgs, self.flip(L_state.h)], axis=1), state=L_state)
+            _, L_state = self.L_update(inputs=tf.concat([CL_msgs, self.flip(L_state.h, self.n_L_vars)], axis=1), state=L_state)
         with tf.variable_scope('A_update') as scope:
-            _, A_state = self.A_update(inputs=tf.concat([CA_msgs, self.flip(A_state.h)], axis=1), state=A_state)
+            _, A_state = self.A_update(inputs=tf.concat([CA_msgs, self.flip(A_state.h, self.n_A_vars)], axis=1), state=A_state)
 
         return i+1, L_state, C_state, A_state
 
@@ -109,31 +111,31 @@ class NeuroSAT(object):
         with tf.name_scope('pass_messages') as scope:
             denom = tf.sqrt(tf.cast(self.opts.d, tf.float32))
 
-            L_output = tf.tile(tf.div(self.L_init, denom), [self.n_lits, 1])
-            C_output = tf.tile(tf.div(self.C_init, denom), [self.n_clauses, 1])
             A_output = tf.tile(tf.div(self.A_init, denom), [self.n_A_lits, 1])
+            L_output = tf.tile(tf.div(self.L_init, denom), [self.n_L_lits, 1])
+            C_output = tf.tile(tf.div(self.C_init, denom), [self.n_clauses, 1])
 
-            L_state = LSTMStateTuple(h=L_output, c=tf.zeros([self.n_lits, self.opts.d]))
-            C_state = LSTMStateTuple(h=C_output, c=tf.zeros([self.n_clauses, self.opts.d]))
             A_state = LSTMStateTuple(h=A_output, c=tf.zeros([self.n_A_lits, self.opts.d]))
+            L_state = LSTMStateTuple(h=L_output, c=tf.zeros([self.n_L_lits, self.opts.d]))
+            C_state = LSTMStateTuple(h=C_output, c=tf.zeros([self.n_clauses, self.opts.d]))
 
             _, L_state, C_state, A_state = tf.while_loop(self.while_cond, self.while_body, [0, L_state, C_state, A_state])
 
-        self.final_lits = L_state.h
-        self.final_clauses = C_state.h
         self.final_A_lits = A_state.h
-
+        self.final_L_lits = L_state.h
+        self.final_clauses = C_state.h
+        
     def compute_logits(self):
         with tf.name_scope('compute_logits') as scope:
-            self.all_votes = self.L_vote.forward(self.final_lits) # n_lits x 1
-            self.all_votes_join = tf.concat([self.all_votes[0:self.n_vars], self.all_votes[self.n_vars:self.n_lits]], axis=1) # n_vars x 2
-            self.all_votes_batched = tf.reshape(self.all_votes_join, [self.n_batches, self.n_vars_per_batch, 2])
-
             self.all_votes_A = self.A_vote.forward(self.final_A_lits) # n_lits x 1
-            self.all_votes_join_A = tf.concat([self.all_votes_A[0:self.n_A_vars], self.all_votes_A[self.n_A_vars:self.n_A_lits]], axis=1) # n_A_vars x 2
+            self.all_votes_L = self.L_vote.forward(self.final_L_lits) # n_lits x 1
+            self.all_votes_join_A = tf.concat([self.all_votes_A[0:self.n_A_vars], self.all_votes_A[self.n_A_vars:self.n_A_lits]], axis=1)
+            self.all_votes_join_L = tf.concat([self.all_votes_L[0:self.n_L_vars], self.all_votes_L[self.n_L_vars:self.n_L_lits]], axis=1)
             self.all_votes_batched_A = tf.reshape(self.all_votes_join_A, [self.n_batches, self.n_A_vars_per_batch, 2])
+            self.all_votes_batched_L = tf.reshape(self.all_votes_join_L, [self.n_batches, self.n_L_vars_per_batch, 2])
 
-            self.logits = self.final_reducer(self.all_votes_batched) + self.vote_bias + self.final_reducer(self.all_votes_batched_A)
+            # try to use only A_votes for logits?
+            self.logits = self.final_reducer(self.all_votes_batched_L) + self.vote_bias + self.final_reducer(self.all_votes_batched_A)
 
     def compute_cost(self):
         self.predict_costs = tf.nn.sigmoid_cross_entropy_with_logits(logits=self.logits, labels=tf.cast(self.is_sat, tf.float32))
@@ -171,9 +173,9 @@ class NeuroSAT(object):
 
     def init_saver(self):
         self.saver = tf.train.Saver(max_to_keep=self.opts.n_saves_to_keep)
-        if self.opts.run_id:
+        if self.opts.run_id is not None:
             self.save_dir = "snapshots/run%d" % self.opts.run_id
-            self.save_prefix = "%s/snap" % self.save_dir
+            self.save_prefix = os.path.join(self.save_dir, "snap") #"%s/snap" % self.save_dir
 
     def build_network(self):
         self.init_random_seeds()
@@ -196,8 +198,8 @@ class NeuroSAT(object):
 
     def build_feed_dict(self, problem):
         d = {}
-        d[self.n_vars] = problem.n_vars_AL[1]
-        d[self.n_lits] = problem.n_lits_AL[1]
+        d[self.n_L_vars] = problem.n_vars_AL[1]
+        d[self.n_L_lits] = problem.n_lits_AL[1]
         d[self.n_A_vars] = problem.n_vars_AL[0]
         d[self.n_A_lits] = problem.n_lits_AL[0]
         d[self.n_clauses] = problem.n_clauses
