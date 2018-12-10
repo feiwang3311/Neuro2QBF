@@ -58,6 +58,7 @@ class NeuroSAT(object):
             self.A_update = tf.contrib.rnn.LayerNormBasicLSTMCell(self.opts.d, activation=decode_transfer_fn(opts.lstm_transfer_fn))
             self.L_update = tf.contrib.rnn.LayerNormBasicLSTMCell(self.opts.d, activation=decode_transfer_fn(opts.lstm_transfer_fn))
             self.C_update = tf.contrib.rnn.LayerNormBasicLSTMCell(self.opts.d, activation=decode_transfer_fn(opts.lstm_transfer_fn))
+            self.C_update2 = tf.contrib.rnn.LayerNormBasicLSTMCell(self.opts.d, activation=decode_transfer_fn(opts.lstm_transfer_fn))
 
             self.A_vote = MLP(opts, opts.d, repeat_end(opts.d, opts.n_vote_layers, 1), name=("A_vote"))
             self.L_vote = MLP(opts, opts.d, repeat_end(opts.d, opts.n_vote_layers, 1), name=("L_vote"))
@@ -94,7 +95,9 @@ class NeuroSAT(object):
 
         # maybe have 2 C_update modules, 1 for LC_msgs and 1 for AC_msgs
         with tf.variable_scope('C_update') as scope:
-            _, C_state = self.C_update(inputs=(AC_msgs + LC_msgs), state=C_state)
+            _, C_state = self.C_update(inputs= LC_msgs, state=C_state)
+        with tf.variable_scope('C_update2') as scope:
+            _, C_state = self.C_update2(inputs=AC_msgs, state=C_state)
 
         C_pre_msgs = self.C_msg.forward(C_state.h)
         CL_msgs = tf.sparse_tensor_dense_matmul(self.L_unpack, C_pre_msgs)
@@ -135,7 +138,7 @@ class NeuroSAT(object):
             self.all_votes_batched_L = tf.reshape(self.all_votes_join_L, [self.n_batches, self.n_L_vars_per_batch, 2])
 
             # try to use only A_votes for logits?
-            self.logits = self.final_reducer(self.all_votes_batched_L) + self.vote_bias + self.final_reducer(self.all_votes_batched_A)
+            self.logits = self.final_reducer(self.all_votes_batched_A) + self.vote_bias# + self.final_reducer(self.all_votes_batched_L) 
 
     def compute_cost(self):
         self.predict_costs = tf.nn.sigmoid_cross_entropy_with_logits(logits=self.logits, labels=tf.cast(self.is_sat, tf.float32))
