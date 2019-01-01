@@ -113,28 +113,25 @@ class NeuroSAT(object):
 
         return i+1, A_state, L_state, CA_state, CL_state
 
-    def while_body2(self, i, A_state, L_state, CA_state, CL_state): # TO HERE
+    def while_body2(self, i, A_state, L_state, CA_state, CL_state):
+
         A_pre_msgs = self.A_msg.forward(A_state.h)
         AC_msgs = tf.sparse_tensor_dense_matmul(self.A_unpack, A_pre_msgs, adjoint_a=True)
+        with tf.variable_scope('CL_update') as scope:
+            _, CL_state = self.CL_update(inputs=AC_msgs, state=CL_state)
+        CL_pre_msgs = self.CL_msg.forward(CL_state.h)
+        CL_msgs = tf.sparse_tensor_dense_matmul(self.L_unpack, CL_pre_msgs)
+        with tf.variable_scope('L_update') as scope:
+            _, L_state = self.L_update(inputs=tf.concat([CL_msgs, self.flip(L_state.h, self.n_L_vars)], axis=1), state=L_state)
 
         L_pre_msgs = self.L_msg.forward(L_state.h)
         LC_msgs = tf.sparse_tensor_dense_matmul(self.L_unpack, L_pre_msgs, adjoint_a=True)
-
-        ALC_msgs = tf.concat([AC_msgs, LC_msgs], axis=1)
         with tf.variable_scope('CA_update') as scope:
-            _, CA_state = self.CA_update(inputs=ALC_msgs, state=CA_state)
-        with tf.variable_scope('CL_update2') as scope:
-            _, CL_state = self.CL_update(inputs=ALC_msgs, state=CL_state)
-
+            _, CA_state = self.CA_update(inputs=LC_msgs, state=CA_state)
         CA_pre_msgs = self.CA_msg.forward(CA_state.h)
-        CL_pre_msgs = self.CL_msg.forward(CL_state.h)
         CA_msgs = tf.sparse_tensor_dense_matmul(self.A_unpack, CA_pre_msgs)
-        CL_msgs = tf.sparse_tensor_dense_matmul(self.L_unpack, CL_pre_msgs)
-
         with tf.variable_scope('A_update') as scope:
             _, A_state = self.A_update(inputs=tf.concat([CA_msgs, self.flip(A_state.h, self.n_A_vars)], axis=1), state=A_state)
-        with tf.variable_scope('L_update') as scope:
-            _, L_state = self.L_update(inputs=tf.concat([CL_msgs, self.flip(L_state.h, self.n_L_vars)], axis=1), state=L_state)
 
         return i+1, A_state, L_state, CA_state, CL_state
 

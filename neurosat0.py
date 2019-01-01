@@ -28,7 +28,7 @@ from util import repeat_end, decode_final_reducer, decode_transfer_fn
 from tensorflow.contrib.rnn import LSTMStateTuple
 from sklearn.cluster import KMeans
 
-class NeuroSAT(object):
+class NeuroSAT0(object):
     def __init__(self, opts):
         self.opts = opts
 
@@ -53,12 +53,13 @@ class NeuroSAT(object):
 
             self.A_msg = MLP(opts, opts.d, repeat_end(opts.d, opts.n_msg_layers, opts.d), name=("A_msg"))
             self.L_msg = MLP(opts, opts.d, repeat_end(opts.d, opts.n_msg_layers, opts.d), name=("L_msg"))
-            self.C_msg = MLP(opts, opts.d, repeat_end(opts.d, opts.n_msg_layers, opts.d), name=("C_msg"))
+            self.CA_msg = MLP(opts, opts.d, repeat_end(opts.d, opts.n_msg_layers, opts.d), name=("CA_msg"))
+            self.CL_msg = MLP(opts, opts.d, repeat_end(opts.d, opts.n_msg_layers, opts.d), name=("CL_msg"))
 
             self.A_update = tf.contrib.rnn.LayerNormBasicLSTMCell(self.opts.d, activation=decode_transfer_fn(opts.lstm_transfer_fn))
             self.L_update = tf.contrib.rnn.LayerNormBasicLSTMCell(self.opts.d, activation=decode_transfer_fn(opts.lstm_transfer_fn))
             self.C_update = tf.contrib.rnn.LayerNormBasicLSTMCell(self.opts.d, activation=decode_transfer_fn(opts.lstm_transfer_fn))
-            self.C_update2 = tf.contrib.rnn.LayerNormBasicLSTMCell(self.opts.d, activation=decode_transfer_fn(opts.lstm_transfer_fn))
+            # self.C_update2 = tf.contrib.rnn.LayerNormBasicLSTMCell(self.opts.d, activation=decode_transfer_fn(opts.lstm_transfer_fn))
 
             self.A_vote = MLP(opts, opts.d, repeat_end(opts.d, opts.n_vote_layers, 1), name=("A_vote"))
             self.L_vote = MLP(opts, opts.d, repeat_end(opts.d, opts.n_vote_layers, 1), name=("L_vote"))
@@ -93,15 +94,15 @@ class NeuroSAT(object):
         L_pre_msgs = self.L_msg.forward(L_state.h)
         LC_msgs = tf.sparse_tensor_dense_matmul(self.L_unpack, L_pre_msgs, adjoint_a=True)
 
-        # maybe have 2 C_update modules, 1 for LC_msgs and 1 for AC_msgs
         with tf.variable_scope('C_update') as scope:
-            _, C_state = self.C_update(inputs= LC_msgs, state=C_state)
-        with tf.variable_scope('C_update2') as scope:
-            _, C_state = self.C_update2(inputs=AC_msgs, state=C_state)
+            _, C_state = self.C_update(inputs=tf.concat([AC_msgs, LC_msgs], axis=1), state=C_state)
+#        with tf.variable_scope('C_update2') as scope:
+#            _, C_state = self.C_update2(inputs=AC_msgs, state=C_state)
 
-        C_pre_msgs = self.C_msg.forward(C_state.h)
-        CL_msgs = tf.sparse_tensor_dense_matmul(self.L_unpack, C_pre_msgs)
-        CA_msgs = tf.sparse_tensor_dense_matmul(self.A_unpack, C_pre_msgs)
+        CA_pre_msgs = self.CA_msg.forward(C_state.h)
+        CL_pre_msgs = self.CL_msg.forward(C_state.h)
+        CA_msgs = tf.sparse_tensor_dense_matmul(self.A_unpack, CA_pre_msgs)
+        CL_msgs = tf.sparse_tensor_dense_matmul(self.L_unpack, CL_pre_msgs)
 
         with tf.variable_scope('L_update') as scope:
             _, L_state = self.L_update(inputs=tf.concat([CL_msgs, self.flip(L_state.h, self.n_L_vars)], axis=1), state=L_state)

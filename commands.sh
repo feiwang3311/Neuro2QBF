@@ -3,9 +3,10 @@ python3 randQBF.py --n_quantifiers 2 -a 3 -a 3 -a 8 -a 8 --n_clauses 50 --n_prob
 
 # to generate paired random QBF instances (differ by one lit in formula, but differ completely in sat/unsat)
 python3 randQBFinc.py --n_quantifiers 2 -a 2 -a 3 -a 2 -a 3 --n_clauses 10 --n_pairs 10 --target_dir 2_3_2_3_10_10 
+python3 randQBFinc.py --n_quantifiers 2 -a 2 -a 3 -a 8 -a 10 --n_clauses 95 --n_pairs 1000 --target_dir train10
 
 # to transform dimacs to pickle dump (need to find optimal max_node_per_batch to maximize the efficiency of GPU memory)
-python3 dimacs_to_data.py  --dimacs_dir /homes/wang603/QBF/train10/not.exist --out_dir ./train10/ --max_nodes_per_batch 5000 --n_quantifiers 2 -a 2 -a 3 -a 8 -a 10
+python3 dimacs_to_data.py  --dimacs_dir /homes/wang603/QBF/train10/ --out_dir ./train10_20/ --max_nodes_per_batch 5000 --n_quantifiers 2 -a 2 -a 3 -a 8 -a 10 --max_dimacs 20
 
 python3 dimacs_to_data.py --dimacs_dir dir/not/exist/ --out_dir ./2_3_2_3_10_10 --max_nodes_per_batch 5000 --n_quantifiers 2 -a 2 -a 3 -a 2 -a 3
 
@@ -17,4 +18,15 @@ python3 train.py --train_dir ./2_3_2_3_10_10/ --run_id 10001 # flip order of LST
 python3 train.py --train_dir ./2_3_2_3_10_10/ --run_id 10002 # sum message from L and A to update clause embedding (Bad: 0.46 at 6000)
 python3 train.py --train_dir ./2_3_2_3_10_10/ --run_id 10003 # concat message from A and L to update clause embedding (Bad: 0.4865 at 6000, 0.5 at 3000)
 python3 train.py --train_dir ./2_3_2_3_10_10/ --run_id 10004 # concat message and use separate MLP for message CA and message CL (Good: 0.0027 at 6000, 0.0032 at 3000, 0.0532 at 1500)
+python3 train.py --train_dir ./2_3_2_3_10_10/ --run_id 10005 # repeat above at 3000 epochs (Good: 0.0202 at 3000)
 python3 train.py --train_dir ./2_3_2_3_10_10/ --run_id 10010 # new GNN (separate CL and CA embedding)(Good: 0.0484 at 3000)
+python3 train.py --train_dir ./2_3_2_3_10_10/ --run_id 10011 # repeat above at 3000 epochs (Good: 0.147 at 3000)
+
+CUDA_VISIBLE_DEVICES=2 python3 train.py --train_dir ./2_3_2_3_10_10/ --run_id 10012 # CEGAR like while (while_body2) (Bad: 0.4585 at 3000)
+CUDA_VISIBLE_DEVICES=3 python3 train.py --train_dir ./2_3_2_3_10_10/ --run_id 10013 # repeat above (Bad: 0.4533 at 3000) 
+
+CUDA_VISIBLE_DEVICES=0 python3 train.py --train_dir ./train10_20/ --run_id 10 --model_id 0 # train on small set of larger problem (model 0) (Good: 0.0346 at 3000 epochs) 
+CUDA_VISIBLE_DEVICES=1 python3 train.py --train_dir ./train10_20/ --run_id 11 --model_id 1 # train on small set of larger problem (model 1) (Good: 0.1518 at 3000 epochs)
+
+CUDA_VISIBLE_DEVICES=0 python3 train.py --train_dir ./train10/ --run_id 12 --model_id 0 # train on 1000 pairs of problems (model 0) 
+CUDA_VISIBLE_DEVICES=1 python3 train.py --train_dir ./train10/ --run_id 13 --model_id 1 # train on 1000 pairs of problems (model 1) 

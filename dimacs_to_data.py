@@ -71,12 +71,9 @@ batches = []
 n_nodes_in_batch = 0
 
 filenames = os.listdir(opts.dimacs_dir)
-
+filenames = sorted(filenames)
 if not (opts.max_dimacs is None):
     filenames = filenames[:opts.max_dimacs]
-
-# to improve batching
-filenames = sorted(filenames)
 
 prev_n_vars = None
 

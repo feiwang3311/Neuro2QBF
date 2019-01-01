@@ -23,7 +23,8 @@ import sys
 import os
 import argparse
 from options import add_neurosat_options
-from neurosat0 import NeuroSAT
+from neurosat0 import NeuroSAT0
+from neurosat import NeuroSAT
 
 parser = argparse.ArgumentParser()
 add_neurosat_options(parser)
@@ -32,8 +33,9 @@ parser.add_argument('--train_dir', action='store', type=str, help='Directory wit
 parser.add_argument('--run_id', action='store', dest='run_id', type=int, default=None)
 parser.add_argument('--restore_id', action='store', dest='restore_id', type=int, default=None)
 parser.add_argument('--restore_epoch', action='store', dest='restore_epoch', type=int, default=None)
-parser.add_argument('--n_epochs', action='store', dest='n_epochs', type=int, default=1000, help='Number of epochs through data')
+parser.add_argument('--n_epochs', action='store', dest='n_epochs', type=int, default=6000, help='Number of epochs through data')
 parser.add_argument('--n_saves_to_keep', action='store', dest='n_saves_to_keep', type=int, default=4, help='Number of saved models to keep')
+parser.add_argument('--model_id', action='store', type=int, help='which model to use', default=0)
 
 opts = parser.parse_args()
 
@@ -47,7 +49,10 @@ print(opts)
 if not os.path.exists("snapshots/"):
     os.mkdir("snapshots")
 
-g = NeuroSAT(opts)
+if opts.model_id == 0:
+    g = NeuroSAT0(opts)
+else:
+    g = NeuroSAT(opts)
 
 for epoch in range(opts.n_epochs):
     result = g.train_epoch(epoch)
