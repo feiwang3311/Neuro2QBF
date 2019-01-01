@@ -98,7 +98,7 @@ class NeuroSAT(object):
         ALC_msgs = tf.concat([AC_msgs, LC_msgs], axis=1)
         with tf.variable_scope('CA_update') as scope:
             _, CA_state = self.CA_update(inputs=ALC_msgs, state=CA_state)
-        with tf.variable_scope('CL_update2') as scope:
+        with tf.variable_scope('CL_update') as scope:
             _, CL_state = self.CL_update(inputs=ALC_msgs, state=CL_state)
 
         CA_pre_msgs = self.CA_msg.forward(CA_state.h)
