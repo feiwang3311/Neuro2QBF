@@ -218,6 +218,9 @@ class NeuroSAT(object):
         self.build_optimizer()
         self.initialize_vars()
         self.init_saver()
+        if self.opts.restore_id is not None:
+            if self.opts.restore_epoch is not None:
+                self.restore()
 
     def save(self, epoch):
         self.saver.save(self.sess, self.save_prefix, global_step=epoch)
